@@ -17,12 +17,31 @@ from unixnu.ipsw import Ipsw
 from unixnu.userdata import disk_blocks, image_size
 
 
+def ensure_locked_git_source(module, name):
+    """Pre-fetch a locked git source when its branch ref has moved past the pinned commit."""
+    lock = json.loads((module / 'tools/source-lock.json').read_text())
+    source = lock[name]
+    directory = module / 'deps' / name
+    if directory.exists():
+        return
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(['git', 'clone', '--depth', '1', '--branch', source['ref'],
+                    '--filter=blob:none', '--sparse', source['url'], str(directory)], check=True)
+    head = subprocess.run(['git', '-C', str(directory), 'rev-parse', 'HEAD'],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    if head != source['commit']:
+        subprocess.run(['git', '-C', str(directory), 'fetch', '--depth', '1',
+                        '--filter=blob:none', 'origin', source['commit']], check=True)
+        subprocess.run(['git', '-C', str(directory), 'checkout', '--detach', source['commit']], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--reuse-policies', action='store_true', help='use the selected profile\'s signed root headers and public key')
     args = parser.parse_args()
     subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] /
                                       'scripts/extract-files.py')], check=True)
+    ensure_locked_git_source(Path(__file__).resolve().parents[1] / 'drivers/Ath12kWifi', 'freebsd')
     subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] /
                                       'drivers/Ath12kWifi/tools/fetch-sources.py')], check=True)
     ctx = Context(cli_parser().parse_args(['build', 'kernel', '-D', str(Path(__file__).resolve().parents[1]),
