@@ -100,6 +100,27 @@ jobs:
           stamp.parent.mkdir(parents=True, exist_ok=True)
           stamp.write_text(signature + '\n')
           PYTHON
+      - name: Refresh pinned Mesa checkout
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib, json, shutil, subprocess
+          from pathlib import Path
+          core = Path('UniXNU')
+          pins_path = core / 'scripts/data/adreno-compiler-inputs.json'
+          pins = json.loads(pins_path.read_text())
+          pin = pins['mesa']['commit']
+          tree = core / 'out/sheng/macos-27.3-26C5035r/sheng_macos/tree'
+          source = tree / '.cache/mesa-work'
+          signature = hashlib.sha256((pin + '\n').encode() + pins_path.read_bytes() + b''.join((core / patch).read_bytes() for patch in pins['patches'])).hexdigest()
+          stamp = source.with_name('unixnu-mesa-patch.sha256')
+          if source.exists():
+              actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+              if actual != pin or not stamp.exists() or stamp.read_text().strip() != signature:
+                  shutil.rmtree(source)
+                  shutil.rmtree(tree / 'build/mesa-tu-macos27', ignore_errors=True)
+          stamp.parent.mkdir(parents=True, exist_ok=True)
+          stamp.write_text(signature + '\n')
+          PYTHON
       - name: Install build tools
         run: |
           brew install dtc llvm lld llvm@22 lld@22 cmake mtools ninja glslang shaderc spirv-tools bison pkgconf rustup unifdef openssl@3 zstd blacktop/tap/ipsw
